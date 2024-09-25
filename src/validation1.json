@@ -1,0 +1,45 @@
+[
+  {
+    "name": "github_access_permission_atomation",
+    "admins": [
+      "Sheeb07",
+      "Ishrath786"
+    ]
+  },
+  {
+    "name": "Access-Auto",
+    "admins": [
+      "biswodash",
+      "Ishrath786"
+    ]
+  },
+  {
+    "name": "is",
+    "admins": [
+      "Sheeb07",
+      "SheebaFatima"
+    ]
+  },
+  {
+    "name": "hr",
+    "admins": [
+      "Sheeb07",
+      "SheebaFatima",
+      "Ishrath786",
+      "biswodash"
+    ]
+  },
+  {
+    "name": "ath",
+    "admins": [
+      "SheebaFatima",
+      "biswodash"
+    ]
+  },
+  {
+    "name": "fat",
+    "admins": [
+      "Ishrath786"
+    ]
+  }
+]

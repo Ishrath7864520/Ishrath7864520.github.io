@@ -1,0 +1,67 @@
+name: Validate Details
+'on':
+  workflow_dispatch: null
+  issues:
+    types:
+      - opened
+
+jobs:
+  validate_details:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_SERVER_URL: ${{ github.server_url }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Extract Information
+        id: extract_info
+        run: |
+          repo_name=$(grep -oP 'RepoName: \K(.+)' <<< "${{ github.event.issue.body }}")
+          user_username=$(jq -r '.issue.user.login' "$GITHUB_EVENT_PATH")
+          echo "The issue was created by: $user_username"
+          type_of_access=$(grep -oP 'Type of access: \K(.+)' <<< "${{ github.event.issue.body }}")
+
+          echo "::set-output name=repo_name::$repo_name"
+          echo "::set-output name=user_username::$user_username"
+          echo "::set-output name=type_of_access::$type_of_access"
+          echo "::set-output name=issue_number::${{ github.event.issue.number }}"
+          
+      - name: Install node js
+        id: install_dependencies
+        run: |
+          npm install node.js
+      - name: Install octokit
+        id: install_octokit
+        run: |
+          npm install @octokit/rest
+                   
+      - name: Validate Details
+        id: validate_details_repo
+        run: |
+            output=$(node src/repovalid.js "Ishrath7864520" "${{ steps.extract_info.outputs.repo_name }}" || echo "Error: Validation failed.")
+            echo "::set-output name=validation_output::$output"
+            if [[ $output == *"Error"* ]]; then
+              echo "::set-output name=validation_error::true"
+            else
+              echo "::set-output name=validation_error::false"
+            fi
+        shell: bash
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+    
+      - name: Send Email Notification
+        if:  steps.validate_details_repo.outputs.validation_error == 'true'
+        run: node src/close_issue.mjs "${{ steps.extract_info.outputs.issue_number }}" "${{ steps.extract_info.outputs.user_username }}" "@${{ steps.extract_info.outputs.user_username }}  The repository '${{ steps.extract_info.outputs.repo_name }}' was not found in the organization. Please verify the repository details you provided. This issue is being closed for now."
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+           
+      - name: Run JavaScript script
+        id: teams_name 
+        if: ${{ steps.validate_details_repo.outputs.validation_error != 'true' && steps.close_issue.outcome != 'success' }}
+        run: node src/team_name.mjs Ishrath7864520 ${{ steps.extract_info.outputs.repo_name }} ${{ steps.extract_info.outputs.issue_number }} ${{ steps.extract_info.outputs.user_username }}
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+     
+

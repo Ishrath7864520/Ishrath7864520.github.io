@@ -1,0 +1,184 @@
+
+name: Team Access
+
+on:
+  issue_comment:
+    types: [edited]
+
+jobs:
+  team_access:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Extract Information
+        id: extract_info
+        run: |
+          repo_name=$(grep -oP 'RepoName: \K(.+)' <<< "${{ github.event.issue.body }}")
+          user_username=$(jq -r '.issue.user.login' "$GITHUB_EVENT_PATH")
+          echo "The issue was created by: $user_username"
+          type_of_access=$(grep -oP 'Type of access: \K(.+)' <<< "${{ github.event.issue.body }}")
+
+          echo "::set-output name=repo_name::$repo_name"
+          echo "::set-output name=user_username::$user_username"
+          echo "::set-output name=type_of_access::$type_of_access"
+          echo "::set-output name=issue_number::${{ github.event.issue.number }}"
+          
+      - name: Check and Track Comment IDs
+        id: check_comments
+        run: node src/edited.js "Ishrath7864520" "Access-Auto" ${{ github.event.issue.number }} ${{ github.event.comment.id }} ${{ github.run_id }}
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+
+      - name: Exit if Duplicate Comment
+        if: steps.check_comments.outputs.cancel_workflow == 'true'
+        run: exit 0
+        
+      - name: Determine Action from Comment
+        id: determine_action
+        run: |
+          comment_body=$(jq -r .comment.body $GITHUB_EVENT_PATH)
+          echo "Comment Body: $comment_body"
+
+          # Check if the comment contains 'Approve' or 'Reject'
+          if [[ "$comment_body" == *"- [x] Approve"* || "$comment_body" == *"- [x] Reject"* ]]; then
+            if [[ "$comment_body" == *"- [x] Approve"* ]]; then
+              echo "::set-output name=approve::true"
+            elif [[ "$comment_body" == *"- [x] Reject"* ]]; then
+              echo "::set-output name=reject::true"
+            fi
+            echo "::set-output name=team_name::"  # Clear the team_name output if it's an approval/rejection comment
+          else
+            # Assume it's a team name if not an approval/rejection comment
+            team_name=$(echo "$comment_body" | grep -oP '(?<=- \[x\] ).+' | sed 's/ *([^)]*)//g')
+            echo "Team selected: $team_name"
+            echo "::set-output name=team_name::$team_name"
+          fi
+
+      - name: Install node js
+        id: install_dependencies
+        run: |
+          npm install node.js
+    
+      - name: Install octokit
+        id: install_octokit
+        run: |
+          npm install @octokit/rest
+
+      - name: Handle Team Selection
+        id: team_selection
+        if: steps.determine_action.outputs.team_name != ''
+        run: |
+          echo "Handling Team Selection"
+          echo "Team Name: ${{ steps.determine_action.outputs.team_name }}"
+          # Use the team name as needed
+          echo "::set-output name=team_id::$(echo ${{ steps.determine_action.outputs.team_name }} | some_command_to_get_team_id)"
+    
+      - name: Run JavaScript Script for Team Selection
+        id: teamselect0
+        run: |
+          output=$(node src/comments.mjs "${{ steps.extract_info.outputs.issue_number }}")
+          echo "Selected teams: $output"
+          echo "::set-output name=teams_name::$output"
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+
+      - name: Validate Access
+        id: validate_access
+        run: |
+          node src/validate_access.js "Ishrath7864520" "${{ steps.extract_info.outputs.repo_name }}" "${{ steps.extract_info.outputs.user_username }}" "${{ steps.extract_info.outputs.type_of_access }}" "${{ steps.teamselect0.outputs.teams_name }}" "${{ steps.extract_info.outputs.issue_number }}"
+          if [ $? -eq 0 ]; then
+            echo "::set-output name=issue_closed::true"
+          else
+            echo "::set-output name=issue_closed::false"
+          fi
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+        continue-on-error: true
+      
+      - name: Debug Outputs
+        run: |
+          echo "Issue Closed: ${{ steps.validate_access.outputs.issue_closed }}"
+          echo "Team Name: ${{ steps.determine_action.outputs.team_name }}"
+      
+      - name: Assign Issue
+        if: steps.validate_access.outputs.issue_closed != 'true' && steps.determine_action.outputs.team_name != ''
+        run: node src/assignissue1809.js "Ishrath7864520" "${{ steps.extract_info.outputs.repo_name }}" "${{ steps.extract_info.outputs.issue_number }}" "${{ steps.extract_info.outputs.user_username }}"
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+
+      - name: Check Approval or Rejection
+        id: check_comment
+        if: steps.determine_action.outputs.approve == 'true' || steps.determine_action.outputs.reject == 'true'
+        run: |
+          comment_body=$(jq -r .comment.body $GITHUB_EVENT_PATH)
+          editor=$(jq -r .sender.login $GITHUB_EVENT_PATH)
+          assignee=$(jq -r .issue.assignee.login $GITHUB_EVENT_PATH)
+          
+          echo "Comment Body: $comment_body"
+          echo "Editor: $editor"
+          echo "Assignee: $assignee"
+          
+          if [[ "$comment_body" == *"- [x] Approve"* && "$comment_body" == *"- [x] Reject"* ]]; then
+            echo "Both checkboxes are selected."
+            echo "::set-output name=not_approve::true"
+          elif [[ "$comment_body" == *"- [x] Approve"* ]]; then
+            echo "Approve checkbox is selected."
+            echo "::set-output name=approve::true"
+          elif [[ "$comment_body" == *"- [x] Reject"* ]]; then
+            echo "Reject checkbox is selected."
+            echo "::set-output name=reject::true"
+          fi
+  
+          if [[ "$editor" == "$assignee" ]]; then
+            echo "Comment edited by the assignee."
+            echo "::set-output name=edited_by_assignee::true"
+          else
+            echo "Comment not edited by the assignee." 
+            echo "::set-output name=edited_by_assignee::false"
+          fi
+
+        
+      - name: Close issue if not edited by assignee
+        if: steps.check_comment.outputs.edited_by_assignee == 'false'
+        run: node src/close_issue.mjs  "${{ steps.extract_info.outputs.issue_number }}" "${{ steps.extract_info.outputs.user_username }}" "@${{ steps.extract_info.outputs.user_username }} Closing the issue because the markdown was not selected by assignee.."
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+        
+      - name: Rejection Notification
+        if: steps.check_comment.outputs.reject == 'true'
+        run: node src/close_issue.mjs  "${{ steps.extract_info.outputs.issue_number }}" "${{ steps.extract_info.outputs.user_username }}" "@${{ steps.extract_info.outputs.user_username }} closing the issue as the requet is rejected."
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+
+      - name: Run JavaScript script
+        id: teamselect
+        if: steps.check_comment.outputs.approve == 'true' && steps.check_comment.outputs.edited_by_assignee == 'true'
+        run: |
+          output=$(node src/comments.mjs "${{ steps.extract_info.outputs.issue_number }}")
+          echo "Selected teams: $output"
+          echo "::set-output name=teams_name::$output"
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+      
+      - name: Grant Access
+        if: steps.teamselect.outcome == 'success' 
+        id: grant_access
+        run: |
+          node src/access.js Ishrath7864520 ${{ steps.extract_info.outputs.repo_name }} ${{ steps.extract_info.outputs.user_username }} "${{ steps.extract_info.outputs.type_of_access }}" ${{ steps.teamselect.outputs.teams_name }} > grant_access_output.txt
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+
+
+      - name: Display Grant Access Output
+        if: steps.grant_access.outcome == 'success'
+        run: |
+          cat grant_access_output.txt
+          
+      - name: Send Email - Grant Access Notification
+        if: steps.grant_access.outcome == 'success'
+        run: node src/close_issue.mjs "${{ steps.extract_info.outputs.issue_number }}" "${{ steps.extract_info.outputs.user_username }}" "@${{ steps.extract_info.outputs.user_username }} closing the issue as the access has been granted."
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}

@@ -1,0 +1,35 @@
+name: JSON Scheduler 
+'on':
+  workflow_dispatch: null
+  # schedule:
+  #   - cron:  "00 11 * * 1-5"
+  
+jobs:
+  run_script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          persist-credentials: false 
+        
+      - name: Install node js
+        id: install_dependencies
+        run: |
+            npm install node.js
+            
+      - name: Install octokit
+        id: install_octokit
+        run: |
+          npm install @octokit/rest   
+
+      # - name: Run Check Membership Script1
+      #   run: node src/team_per.js 
+      #   env:
+      #     TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}
+
+      - name: Run JavaScript script
+        run: node src/json_update.js 
+        env:
+          TOKENSS_GITHUB: ${{ secrets.TOKENSS_GITHUB }}

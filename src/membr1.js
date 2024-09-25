@@ -1,0 +1,38 @@
+const { Octokit } = require('@octokit/rest');
+
+// Create Octokit instance with personal access token
+const octokit = new Octokit({
+  auth: process.env.TOKENSS_GITHUB,
+});
+
+async function checkMembership(org, username) {
+  try {
+    await octokit.orgs.checkMembershipForUser({
+      org: org,
+      username: username,
+    });
+
+    console.log(`User ${username} is a member of organization ${org}`);
+    process.exit(0); // Exit with code 0 if the user is a member
+  } catch (error) {
+    if (error.status === 404) {
+      console.log(`User ${username} is not a member of organization ${org}`);
+      process.exit(1); // Exit with code 1 if the user is not a member
+    } else {
+      console.error(`Error checking membership: ${error.message}`);
+      process.exit(1); // Exit with code 1 on error
+    }
+  }
+}
+
+// Get the org and username from the command line
+const org = process.argv[2];
+const username = process.argv[3];
+
+if (!org || !username) {
+  console.error('Usage: node script.js <org> <username>');
+  process.exit(1);
+}
+
+// Call the function with the provided org and username
+checkMembership(org, username);
